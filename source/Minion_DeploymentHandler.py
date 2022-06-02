@@ -132,6 +132,16 @@ INIsamp = float(config['Initial_Samples']['hours'])
 IG_WIFI_D = float(config['Mission']['Ignore_WIFI-days'])
 IG_WIFI_H = float(config['Mission']['Ignore_WIFI-hours'])
 
+initial_sample_hours = float(config['Initial_Samples']['hours'])
+
+#This checks to see if the initial sampling is disabled (hours set to zero)
+#It should update samp_count if samp_count is zero (first time through)
+#By incrementing samp_count in this way, the initial samples will be completely
+# skipped and the Minion will start in Time Lapse Mode
+if initial_sample_hours <= 0 and samp_count == 0:
+        samp_count = update_sampcount()
+        print("Skipping Initial Sampling Mode...")
+
 IG_WIFI_Samples = (((IG_WIFI_D*24) + IG_WIFI_H)/Srate) - (INIsamp/Srate)
 
 print("Minion Deployment Handler")
