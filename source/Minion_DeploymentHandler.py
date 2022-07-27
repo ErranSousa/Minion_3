@@ -58,27 +58,23 @@ def update_time():
         samp_time = samp_time.replace(" ","_")
         samp_time = samp_time.replace(":","-")
 
-        firstp = open("/home/pi/Documents/Minion_scripts/timesamp.pkl","wb")
-        pickle.dump(samp_time, firstp)
-        firstp.close()
+        with open("/home/pi/Documents/Minion_scripts/timesamp.pkl","wb") as firstp:
+            pickle.dump(samp_time, firstp)
     except:
         print("update time failed")
     return samp_time
 
 def read_sampcount():
-    countp = open("/home/pi/Documents/Minion_scripts/sampcount.pkl","rb")
-    sampcount = pickle.load(countp)
-    countp.close()
+    with open("/home/pi/Documents/Minion_scripts/sampcount.pkl","rb") as countp:
+        sampcount = pickle.load(countp)
     return sampcount
 
 def update_sampcount():
-    countp = open("/home/pi/Documents/Minion_scripts/sampcount.pkl","rb")
-    sampcount = pickle.load(countp)
-    sampcount = sampcount + 1
-    countp.close()
-    countp = open("/home/pi/Documents/Minion_scripts/sampcount.pkl","wb")
-    pickle.dump(sampcount, countp)
-    countp.close()
+    with open("/home/pi/Documents/Minion_scripts/sampcount.pkl","rb") as countp:
+        sampcount = pickle.load(countp)
+        sampcount = sampcount + 1
+    with open("/home/pi/Documents/Minion_scripts/sampcount.pkl","wb") as countp:
+        pickle.dump(sampcount, countp)
     return sampcount
 
 samp_time = update_time()
@@ -136,6 +132,16 @@ INIsamp = float(config['Initial_Samples']['hours'])
 IG_WIFI_D = float(config['Mission']['Ignore_WIFI-days'])
 IG_WIFI_H = float(config['Mission']['Ignore_WIFI-hours'])
 
+initial_sample_hours = float(config['Initial_Samples']['hours'])
+
+#This checks to see if the initial sampling is disabled (hours set to zero)
+#It should update samp_count if samp_count is zero (first time through)
+#By incrementing samp_count in this way, the initial samples will be completely
+# skipped and the Minion will start in Time Lapse Mode
+if initial_sample_hours <= 0 and samp_count == 0:
+        samp_count = update_sampcount()
+        print("Skipping Initial Sampling Mode...")
+
 IG_WIFI_Samples = (((IG_WIFI_D*24) + IG_WIFI_H)/Srate) - (INIsamp/Srate)
 
 print("Minion Deployment Handler")
@@ -175,7 +181,11 @@ ping_google = "ping google.com -c 1"
 
 ps_test = "pgrep -a python"
 
-scriptNames = ["TempPres.py", "Minion_image.py","Minion_image_IF.py","OXYBASE_RS232.py","ACC_100Hz.py","Extended_Sampler.py","Recovery_Sampler_Burn.py","TempPres_IF.py","OXYBASE_RS232_IF.py","ACC_100Hz_IF.py","Iridium_gps.py","Iridium_data.py"]
+scriptNames = ["TempPres.py", "Minion_image.py","Minion_image_IF.py", \
+               "OXYBASE_RS232.py","ACC_100Hz.py","Extended_Sampler.py", \
+               "Recovery_Sampler_Burn.py","TempPres_IF.py","OXYBASE_RS232_IF.py", \
+               "ACC_100Hz_IF.py","Iridium_gps.py","Iridium_data.py", \
+               "xmt_minion_data.py"]
 
 if __name__ == '__main__':
 
@@ -202,20 +212,18 @@ if __name__ == '__main__':
     time.sleep(5)
 
     update_sampcount()
-
+    
+    #Check for WiFi while any of the scripts in scriptNames are executing
     while(any(x in os.popen(ps_test).read() for x in scriptNames)) == True:
+        if check_wifi(IgnoreWIFI) == "Connected":
+            kill_sampling(scriptNames)
+            flash()
+            exit(0)
+        else:
+            print("Sampling")
+            time.sleep(5)
 
-    ## Check for wifi
-
-            if check_wifi(IgnoreWIFI) == "Connected":
-                kill_sampling(scriptNames)
-                flash()
-                exit(0)
-
-            else:
-                print("Sampling")
-                time.sleep(5)
-
+    #Once we get here, there are none of the scripts in scriptNames are running.  
     print('Goodbye')
     GPIO.output(wifi, 0)
     time.sleep(5)

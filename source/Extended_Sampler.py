@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 import RPi.GPIO as GPIO
 import tsys01
 import ms5837
@@ -10,6 +11,10 @@ import math
 import configparser
 import sys
 import atexit
+sys.path.insert(0,'/home/pi/Documents/Minion_tools/')
+from minion_toolbox import MinionToolbox
+
+DATA_TYPE = '$01' #Initial Sampling Type Data
 
 BURN = 33
 data_rec = 16
@@ -54,6 +59,8 @@ def abortMission(configLoc):
     time.sleep(60)
     exit(0)
 
+minion_tools = MinionToolbox() #create an instance of MinionToolbox() called minion_tools
+
 scriptNames = ["TempPres.py", "Minion_image.py","Minion_image_IF.py","OXYBASE_RS232.py","ACC_100Hz.py","Recovery_Sampler.py","TempPres_IF.py","OXYBASE_RS232_IF.py","ACC_100Hz_IF.py","Iridium_gps.py","Iridium_data.py"]
 
 data_config = configparser.ConfigParser()
@@ -78,8 +85,9 @@ if Abort == True:
         GPIO.output(29, 0)
         os.system('sudo python3 /home/pi/Documents/Minion_scripts/Recovery_Sampler_Burn.py &')
 
-firstp = open("/home/pi/Documents/Minion_scripts/timesamp.pkl","rb")
-samp_time = pickle.load(firstp)
+#firstp = open("/home/pi/Documents/Minion_scripts/timesamp.pkl","rb")
+with open("/home/pi/Documents/Minion_scripts/timesamp.pkl","rb") as firstp:
+    samp_time = pickle.load(firstp)
 
 for dataNum in os.listdir('{}/minion_data/INI/'.format(configDir)):
     if dataNum.endswith('_TEMPPRES-INI.txt'):
@@ -93,7 +101,9 @@ samp_time = "{}-{}".format(samp_count_leading_zeros, samp_time) #Add leading zer
 Stime = float(config['Initial_Samples']['hours'])
 Srate = float(config['Initial_Samples']['TempPres_sample_rate'])
 
-file_name = "{}/minion_data/INI/{}_TEMPPRES-INI.txt".format(configDir, samp_time)
+file_name = "{}_TEMPPRES-INI.txt".format(samp_time)
+#file_path_name = "{}/minion_data/INI/{}_TEMPPRES-INI.txt".format(configDir, samp_time)
+file_path_name = "{}/minion_data/INI/".format(configDir) + file_name
 
 Sf = 1/Srate
 
@@ -103,9 +113,14 @@ TotalSamples = Stime*60*60*Srate
 
 time.sleep(1)
 
-file = open(file_name,"a+")
+#file = open(file_path_name,"a+")
+#with open(file_path_name,"a+") as file:
 
-file.write("{}_TEMPPRES.txt ".format(samp_time))
+#Prepare the Header Record
+#file.write(DATA_TYPE) #Write Data Type Identifier
+#file.write("{}_TEMPPRES.txt ".format(samp_time))
+#file.write("," + file_name)  #Write the file name
+#file.write("," + str(Srate)  #Write the sample rate
 
 if iniP30 == True:
 
@@ -125,7 +140,7 @@ if iniP30 == True:
         Pres_ini = "Broken"
 
     #file.write("Pressure(dbar),Temp(C)")
-    file.write("Pressure(dbar*1000),Temp(C*100)")  #Meta-Record for fixed field Press and Temp
+    #file.write(",Pressure(dbar*1000),Temp(C*100)")  #Meta-Record for fixed field Press and Temp
 
 if iniP100 == True:
 
@@ -145,7 +160,7 @@ if iniP100 == True:
         Pres_ini = "Broken"
 
     #file.write("Pressure(dbar),Temp(C)")
-    file.write("Pressure(dbar*1000),Temp(C*100)")  #Meta-Record for fixed field Press and Temp
+    #file.write(",Pressure(dbar*1000),Temp(C*100)")  #Meta-Record for fixed field Press and Temp
 
 if iniTmp == True:
 
@@ -157,11 +172,13 @@ if iniTmp == True:
         exit(1)
 
     #file.write(", TempTSYS01(C)")
-    file.write(", TempTSYS01(C*100)")
+    #file.write(",TempTSYS01(C*100)")
 
-file.write("\r\n")
-file.close()
-
+#file.write("\n")  
+#file.close()
+        
+#Write a header to the data file
+minion_tools.write_data_file_header(DATA_TYPE,file_path_name,file_name,Srate,iniP30,iniP100,iniTmp)
 
 if __name__ == '__main__':
 
@@ -182,7 +199,7 @@ if __name__ == '__main__':
 
         print("Initial Sampling Mode")  #Indicate to the user in which mode the Minion is operating
 
-        file = open(file_name,"a")
+        #file = open(file_path_name,"a")
 
         sensor_string = ''
 
@@ -191,7 +208,7 @@ if __name__ == '__main__':
             if Psensor.read():
                 #Ppressure = round((Psensor.pressure() * depth_factor) - surface_offset, 3)
                 Ppressure = round((Psensor.pressure() * depth_factor) - surface_offset, 3)*1000 #shifting the decimal point out
-                Ppressure = "%06d" % Ppressure  #prepending zeros 
+                Ppressure = "%07d" % Ppressure  #prepending zeros 
                 #Ptemperature = round(Psensor.temperature(),3)
                 Ptemperature = round(Psensor.temperature(),2)*100
                 Ptemperature = "%04d" % Ptemperature
@@ -201,14 +218,16 @@ if __name__ == '__main__':
 
             else:
                 print('Pressure Sensor ded')
-                file.write('Pressure Sensor fail')
+                with open(file_path_name,"a") as file:
+                    file.write('Pressure Sensor fail')
                 abortMission(configLoc)
 
             print("Depth: " + str(int(Ppressure)/1000)) #TESTING ONLY
 
             #if Ppressure >= MAX_Depth:
             if int(Ppressure)/1000 >= MAX_Depth:
-                file.write("Minion Exceeded Depth Maximum!")
+                with open(file_path_name,"a") as file:
+                    file.write("Minion Exceeded Depth Maximum!")
                 abortMission(configLoc)
 
 
@@ -227,8 +246,9 @@ if __name__ == '__main__':
 
             sensor_string = '{}{}'.format(sensor_string, Temp_acc)
 
-
-        file.write("{}\n".format(sensor_string))
+        with open(file_path_name,"a") as file:
+            #file.write("{}\n".format(sensor_string))
+            file.write("\n{}".format(sensor_string))
 
         NumSamples = NumSamples + 1
 
@@ -242,7 +262,7 @@ if __name__ == '__main__':
 
         time.sleep(Sf - timeS)
 
-    file.close()
+    #file.close()
     kill_sampling(scriptNames)
     GPIO.setup(data_rec, GPIO.OUT)
     GPIO.output(data_rec, 0)

@@ -2,6 +2,11 @@
 
 import configparser
 import os
+import RPi.GPIO as GPIO
+import time
+
+#Pin Definitions
+light = 12
 
 
 data_config_file = '/home/pi/Documents/Minion_scripts/Data_config.ini'
@@ -16,12 +21,18 @@ class MinionToolbox():
 
     def read_data_config(self):
         """Read the Minion Data Configuration Directory File"""
+
+        keys = ['Data_Dir']
+
+        data_config = dict.fromkeys(keys)
         
-        data_config = configparser.ConfigParser()
-        data_config.read(data_config_file)
-        config_dir = data_config['Data_Dir']['Directory']     
-        print('Data Config: ' + config_dir)
-        return config_dir
+        config = configparser.ConfigParser()
+        config.read(data_config_file)
+
+        data_config['Data_Dir'] = config['Data_Dir']['Directory']  
+
+        print('Data Config: ' + data_config['Data_Dir'])
+        return data_config
         pass
 
     def read_mission_config(self):
@@ -75,8 +86,8 @@ class MinionToolbox():
 
         mission_config = dict.fromkeys(keys)
 
-        config_dir = self.read_data_config()
-        config_file = '{}/Minion_config.ini'.format(config_dir)
+        data_config = self.read_data_config()
+        config_file = '{}/Minion_config.ini'.format(data_config['Data_Dir'])
         print('Mission Config: ' + config_file)
 
         config = configparser.ConfigParser()
@@ -135,3 +146,92 @@ class MinionToolbox():
         else:
             print("[OK] Data Transmit Status Pickle File Already Removed or Does Not Exist.")
 
+
+    def flash(self,num_flashes, ton, toff):
+        """Flash the sampling LED Ring
+
+        Parameters
+        ----------
+        num_flashes : number of flashes
+        ton : Flash on time in milliseconds
+        toff : Flash off time milliseconds
+
+        Returns:
+        --------
+        none
+
+        Example: Generate 2 flashes, 250ms on time, 250ms off time
+        
+            from minion_toolbox import MinionToolbox
+            minion_tools = MinionToolbox()
+            minion_tools.strobe(2,250,250)
+
+        Example: Simply illuminates the LED Ring for 2 seconds
+
+            from minion_toolbox import MinionToolbox
+            minion_tools = MinionToolbox()
+            minion_tools.strobe(1,2000,0)
+
+        Example: Dimmable Setting
+
+            from minion_toolbox import MinionToolbox
+            minion_tools = MinionToolbox()
+            minion_tools.strobe(100,5,5)#Dim by 50%
+        
+        """
+        #Setup the pin - eventually move this to its own method
+        GPIO.setwarnings(False)
+        GPIO.setmode(GPIO.BOARD)
+        GPIO.setup(light, GPIO.OUT)
+        
+        for val in range(num_flashes):
+            GPIO.output(light, 1)
+            time.sleep(ton/1000)
+            #If we have done the requisite number of flashes,
+            #no need for the final off time.
+            if val == num_flashes - 1:
+                break
+            GPIO.output(light, 0)
+            time.sleep(toff/1000)
+            
+        #Finally, turn off the LED Ring    
+        GPIO.output(light, 0)
+
+    def write_data_file_header(self,data_type,file_path_name,file_name,samp_rate,iniP30,iniP100,iniTmp):
+        """Write Header Record to Pressure & Temperature Data File
+
+        Parameters
+        ----------
+        data_type : Data Type - INI:$02, TML:$03, FIN:$04
+        file_path_name : Full path and name of the data file
+        file_name : Name of data file
+        samp_rate : Sample Rate
+        iniP30 : Sensor Enabled - 30Bar Pressure Sensor
+        iniP100 : Sensor Enabled - 100Bar Pressure Sensor
+        iniTmp : Sensor Enabled - Temperature Sensor
+
+        Returns:
+        --------
+        none
+        """
+
+        with open(file_path_name,"a+") as file:
+
+            file.write(data_type) #Write Data Type Identifier
+            file.write("," + file_name)  #Write the file name
+            file.write("," + str(samp_rate))  #Write the sample rate
+
+            if iniP30 == True:
+                #file.write("Pressure(dbar),Temp(C)")
+                file.write(",Pressure(dbar*1000),Temp(C*100)")  #Meta-Record for fixed field Press and Temp
+
+            if iniP100 == True:
+                #file.write("Pressure(dbar),Temp(C)")
+                file.write(",Pressure(dbar*1000),Temp(C*100)")  #Meta-Record for fixed field Press and Temp
+
+            if iniTmp == True:
+                #file.write(", TempTSYS01(C)")
+                file.write(",TempTSYS01(C*100)")
+        
+        
+        

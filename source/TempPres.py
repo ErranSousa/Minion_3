@@ -1,4 +1,5 @@
 #!/usr/bin/python3
+
 import RPi.GPIO as GPIO
 import tsys01
 import ms5837
@@ -7,6 +8,11 @@ import time
 import os
 import configparser
 import pickle
+import sys
+sys.path.insert(0,'/home/pi/Documents/Minion_tools/')
+from minion_toolbox import MinionToolbox
+
+DATA_TYPE = '$02' #Time-Lapse Sampling Type Data
 
 NumSamples = 0
 
@@ -37,7 +43,11 @@ def abortMission(configLoc):
     os.system('sudo python3 /home/pi/Documents/Minion_scripts/Recovery_Sampler_Burn.py &')
     exit(0)
 
-scriptNames = ["Minion_image.py","Minion_image_IF.py","OXYBASE_RS232.py","ACC_100Hz.py","Recovery_Sampler_Burn.py","OXYBASE_RS232_IF.py","ACC_100Hz_IF.py","Iridium_gps.py","Iridium_data.py"]
+minion_tools = MinionToolbox() #create an instance of MinionToolbox() called minion_tools
+
+scriptNames = ["Minion_image.py","Minion_image_IF.py","OXYBASE_RS232.py","ACC_100Hz.py",\
+               "Recovery_Sampler_Burn.py","OXYBASE_RS232_IF.py","ACC_100Hz_IF.py",\
+               "Iridium_gps.py","Iridium_data.py"]
 
 data_config = configparser.ConfigParser()
 data_config.read('/home/pi/Documents/Minion_scripts/Data_config.ini')
@@ -68,8 +78,8 @@ Sf = 1/Srate
 
 TotalSamples = Stime*60*Srate
 
-firstp = open("/home/pi/Documents/Minion_scripts/timesamp.pkl","rb")
-samp_time = pickle.load(firstp)
+with open("/home/pi/Documents/Minion_scripts/timesamp.pkl","rb") as firstp:
+    samp_time = pickle.load(firstp)
 
 for dataNum in os.listdir('{}/minion_data/'.format(configDir)):
     if dataNum.endswith('_TEMPPRES.txt'):
@@ -80,11 +90,12 @@ samp_count_leading_zeros = "%03d" % samp_count
 #samp_time = "{}-{}".format(samp_count, samp_time)
 samp_time = "{}-{}".format(samp_count_leading_zeros, samp_time) #Add leading zeros to sample count
 
-file_name = "{}/minion_data/{}_TEMPPRES.txt".format(configDir, samp_time)
+file_name = "{}_TEMPPRES.txt".format(samp_time)
+#file_path_name = "{}/minion_data/{}_TEMPPRES.txt".format(configDir, samp_time)
+file_path_name = "{}/minion_data/".format(configDir) + file_name
 
-file = open(file_name,"a+")
-
-file.write("{}_TEMPPRES.txt ".format(samp_time))
+#with open(file_path_name,"a+") as file:
+    #file.write("{}_TEMPPRES.txt ".format(samp_time))
 
 if iniP30 == True:
 
@@ -104,7 +115,7 @@ if iniP30 == True:
         Pres_ini = "Broken"
 
     #file.write("Pressure(dbar),Temp(C)")
-    file.write("Pressure(dbar*1000),Temp(C*100)")  #Meta-Record for fixed field Press and Temp
+    #file.write("Pressure(dbar*1000),Temp(C*100)")  #Meta-Record for fixed field Press and Temp
 
 if iniP100 == True:
 
@@ -123,7 +134,7 @@ if iniP100 == True:
     else:
         Pres_ini = "Broken"
 
-    file.write("Pressure(dbar),Temp(C)")
+    #file.write("Pressure(dbar),Temp(C)")
 
 if iniTmp == True:
 
@@ -135,11 +146,12 @@ if iniTmp == True:
         exit(1)
 
     #file.write(", TempTSYS01(C)")
-    file.write(", TempTSYS01(C*100)")
+    #file.write(", TempTSYS01(C*100)")
 
-file.write("\r\n")
-file.close()
+#file.write("\r\n")
 
+#Write a header to the data file
+minion_tools.write_data_file_header(DATA_TYPE,file_path_name,file_name,Srate,iniP30,iniP100,iniTmp)
 
 # Spew readings
 while NumSamples <= TotalSamples:
@@ -148,8 +160,6 @@ while NumSamples <= TotalSamples:
 
     print("Time Lapse Sampling Mode")  #Indicate to the user in which mode the Minion is operating
 
-    file = open(file_name,"a")
-
     sensor_string = ''
 
     if iniP100 or iniP30 == True:
@@ -157,7 +167,7 @@ while NumSamples <= TotalSamples:
         if Psensor.read():
             #Ppressure = round((Psensor.pressure() * depth_factor) - surface_offset, 3)
             Ppressure = round((Psensor.pressure() * depth_factor) - surface_offset, 3)*1000 #shifting the decimal point out
-            Ppressure = "%06d" % Ppressure  #fixed field / prepending zeros
+            Ppressure = "%07d" % Ppressure  #fixed field / prepending zeros
             #Ptemperature = round(Psensor.temperature(),3)
             Ptemperature = round(Psensor.temperature(),2)*100 #shifting the decimal point out
             Ptemperature = "%04d" % Ptemperature #fix field length by prepending zeros if necessary
@@ -167,12 +177,14 @@ while NumSamples <= TotalSamples:
 
         else:
             print('Pressure Sensor ded')
-            file.write('Pressure Sensor fail')
+            with open(file_path_name,"a") as file:
+                file.write('Pressure Sensor fail')
             abortMission(configLoc)
 
         #if Ppressure >= MAX_Depth:
         if int(Ppressure)/1000 >= MAX_Depth:
-            file.write("Minion Exceeded Depth Maximum!")
+            with open(file_path_name,"a") as file:
+                file.write("Minion Exceeded Depth Maximum!")
             abortMission(configLoc)
 
 
@@ -191,8 +203,9 @@ while NumSamples <= TotalSamples:
 
         sensor_string = '{}{}'.format(sensor_string, Temp_acc)
 
-
-    file.write("{}\n".format(sensor_string))
+    with open(file_path_name,"a") as file:
+        #file.write("{}\n".format(sensor_string))
+        file.write("\n{}".format(sensor_string))
 
     NumSamples = NumSamples + 1
 
@@ -206,6 +219,6 @@ while NumSamples <= TotalSamples:
 
     time.sleep(Sf - timeS)
 
-file.close()
+
 
 
